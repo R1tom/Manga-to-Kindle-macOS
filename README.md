@@ -25,3 +25,13 @@ for the Kindle Paperwhite 11th gen (lossless 16-gray AZW3), and copies it to the
 cd app && ./build.sh       # → app/build/Manga to Kindle.app
 ```
 Requires HaruNeko at `/Applications/HakuNeko.app`.
+
+## License
+Copyright (C) 2026 Ritom Puzari
+
+This program is free software: you can redistribute it and/or modify it under the terms of the
+GNU General Public License as published by the Free Software Foundation, either version 3 of the License,
+or (at your option) any later version. See [LICENSE](LICENSE).
+
+Includes `engine/kindleunpack` (KindleUnpack, GPLv3). Uses, but does not include, Kindle Comic Converter (ISC),
+HaruNeko and Amazon kindlegen.
