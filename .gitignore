@@ -1,6 +1,7 @@
 # recreated by ./setup.sh
 venv/
 kcc-src/
+kfx-tool/
 # Amazon kindlegen is proprietary — extract it yourself (see README)
 bin/
 # build output

@@ -610,6 +610,24 @@ def build(plan):
                 elif fmt == "azw3":
                     shutil.copyfile(f, dst)
                     outs.append(dst)
+            if fmt == "kfx":
+                # KFX: Kindle's native format — sideloaded AZW3/MOBI comics show ghosting / white borders on
+                # firmware 5.19.2+ (older Kindles never got the fix); see kfx.py
+                kf8 = f.with_suffix(".kf8.azw3")
+                src = kf8 if to_kf8(f, kf8) else f
+                dst = unique_path(outdir / (f.stem + ".kfx"))
+                emit("stage", stage="kfx", message=f"Making KFX: {f.stem}")
+                try:
+                    sys.path.insert(0, str(HERE))
+                    import kfx
+                    n = kfx.convert(src, dst, title=f.stem, direction="rtl" if opts.get("manga", True) else "ltr")
+                    log(f"  KFX: {n} pages")
+                    outs.append(dst)
+                except Exception as e:
+                    emit("error", message=f"Making the KFX file failed: {e}")
+                    return 5
+                finally:
+                    kf8.unlink(missing_ok=True)
             if fmt in ("mobi", "both"):
                 dst = unique_path(outdir / (f.stem + ".mobi"))
                 shutil.copyfile(f, dst)  # KCC's dual MOBI (MOBI + KF8 inside)

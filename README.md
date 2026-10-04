@@ -13,6 +13,9 @@ for the Kindle Paperwhite 11th gen (lossless 16-gray AZW3), and copies it to the
 ## Features
 - Search every HaruNeko source at once; sources ranked by how many chapters they have in your language.
 - Download → convert → send to Kindle automatically; books over ~600 MB are split into parts.
+- **KFX output** — Kindle firmware 5.19.2 broke sideloaded AZW3/MOBI comics (ghosting / leftovers of the previous page,
+  white borders) and older Kindles like the Paperwhite 11th gen never got the fix. KFX, Kindle's native format, avoids it.
+  Uses [kindle-comic-workaround-5.19.x](https://github.com/HankunYu/kindle-comic-workaround-5.19.x) (cloned by `setup.sh`).
 - Failed chapters are fetched from the next best source automatically (only the missing ones); one book in the end.
 - Survives quitting the app or restarting the Mac: downloads resume where they stopped.
 - Handles blocked sites: fresh API token on MangaHub-family rate limits; Cloudflare checks via a hidden browser or a “Verify Now” prompt.
@@ -28,7 +31,7 @@ for the Kindle Paperwhite 11th gen (lossless 16-gray AZW3), and copies it to the
 
 ## Build
 ```sh
-./setup.sh                 # Python 3.12 venv (uv) + KCC v12.0.0 clone into kcc-src/
+./setup.sh                 # Python 3.12 venv (uv) + KCC v12.0.0 into kcc-src/ + KFX writer into kfx-tool/
 # put kindlegen at bin/kindlegen (extract from Kindle Previewer: pkgutil --expand-full, KFXGen/bin/kindlegen)
 cd app && ./build.sh       # → app/build/Manga to Kindle.app
 ```
@@ -42,4 +45,4 @@ GNU General Public License as published by the Free Software Foundation, either 
 or (at your option) any later version. See [LICENSE](LICENSE).
 
 Includes `engine/kindleunpack` (KindleUnpack, GPLv3). Uses, but does not include, Kindle Comic Converter (ISC),
-HaruNeko and Amazon kindlegen.
+HaruNeko, Amazon kindlegen and kindle-comic-workaround-5.19.x (no license; cloned at setup, not redistributed).

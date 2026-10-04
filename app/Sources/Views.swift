@@ -287,10 +287,13 @@ struct SidePanel: View {
                 Section("Kindle") {
                     LabeledContent("Device", value: "Paperwhite 11th gen (KPW5, 1236×1648)")
                     Picker("Format", selection: $job.format) {
+                        Text("KFX").tag("kfx")
                         Text("AZW3").tag("azw3")
                         Text("MOBI").tag("mobi")
                         Text("Both").tag("both")
                     }.pickerStyle(.segmented)
+                    .help("KFX: Kindle's own format — use it if pages show ghosting / leftovers of the previous page or white borders "
+                          + "(Kindle firmware 5.19.2 broke sideloaded AZW3/MOBI comics on older Kindles such as the Paperwhite 11th gen).")
                     Toggle("Manga (right-to-left)", isOn: $job.manga)
                     Toggle("Webtoon / long strip", isOn: $job.webtoon)
                     Picker("Image", selection: $job.imageMode) {

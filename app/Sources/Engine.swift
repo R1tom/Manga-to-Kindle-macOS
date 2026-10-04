@@ -452,7 +452,7 @@ final class Job: ObservableObject {
 
     /// The Kindle books from the last conversion (with "Both", the AZW3 copies — one of each book is enough).
     var kindleFiles: [String] {
-        let books = resultFiles.filter { $0.hasSuffix(".azw3") || $0.hasSuffix(".mobi") }
+        let books = resultFiles.filter { $0.hasSuffix(".azw3") || $0.hasSuffix(".mobi") || $0.hasSuffix(".kfx") }
         let azw3 = books.filter { $0.hasSuffix(".azw3") }
         return azw3.isEmpty ? books : azw3
     }

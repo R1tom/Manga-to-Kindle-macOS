@@ -212,7 +212,7 @@ final class KindleDevice: ObservableObject {
 
     /// Send books (only .azw3 / .mobi / .pdf / .epub are sent). Queues them if no Kindle is plugged in.
     func send(_ files: [String]) {
-        let books = files.filter { ["azw3", "mobi", "azw", "pdf", "epub"].contains(URL(fileURLWithPath: $0).pathExtension.lowercased()) }
+        let books = files.filter { ["azw3", "mobi", "azw", "kfx", "pdf", "epub"].contains(URL(fileURLWithPath: $0).pathExtension.lowercased()) }
         guard !books.isEmpty else { return }
         let titles = Array(Set(books.compactMap { Status.shared.title(forFile: $0) }))
         guard connected else {
@@ -444,7 +444,7 @@ struct KindlePanel: View {
         let p = NSOpenPanel()
         p.allowsMultipleSelection = true
         p.canChooseDirectories = false
-        p.allowedContentTypes = [.init(filenameExtension: "azw3")!, .init(filenameExtension: "mobi")!, .pdf, .epub]
+        p.allowedContentTypes = [.init(filenameExtension: "azw3")!, .init(filenameExtension: "mobi")!, .init(filenameExtension: "kfx")!, .pdf, .epub]
         p.directoryURL = URL(fileURLWithPath: Job.shared.outputDir)
         if p.runModal() == .OK { k.send(p.urls.map(\.path)) }
     }
