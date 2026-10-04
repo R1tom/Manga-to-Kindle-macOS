@@ -100,7 +100,7 @@ struct ResultsList: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(g.title).font(.body.weight(.medium)).lineLimit(2)
                     Text(sourcesText(g)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }.padding(.vertical, 3).tag(g.id)
+                }.padding(.vertical, 3).padding(.horizontal, 6).tag(g.id)
             }
             .overlay {
                 if haru.results.isEmpty && haru.searchError == nil {
@@ -191,18 +191,23 @@ struct ChaptersPane: View {
                 ProgressView("Loading chapters…").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let list = haru.chapterList {
                 let rows = haru.visibleChapters(list)
-                HStack(spacing: 10) {
-                    Text("\(list.sourceTitle) · \(haru.chosen.count) of \(rows.count) chapters selected")
-                        .font(.headline)
-                    Spacer()
-                    if list.tagged { Toggle("All languages", isOn: $haru.showAllLanguages).toggleStyle(.checkbox) }
-                    TextField("from", text: $from).frame(width: 52)
-                    TextField("to", text: $to).frame(width: 52)
-                    Button("Select Range") { selectRange(rows) }
-                        .disabled(Double(from) == nil && Double(to) == nil)
-                    Button("Best Picks") { haru.chosen = haru.defaultSelection(list) }
-                        .help("Every chapter once, in your language")
-                    Button("None") { haru.chosen = [] }
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 10) {
+                        Text("\(list.sourceTitle) · \(haru.chosen.count) of \(rows.count) chapters selected")
+                            .font(.headline).lineLimit(1).truncationMode(.middle)
+                        Spacer(minLength: 4)
+                        if list.tagged { Toggle("All languages", isOn: $haru.showAllLanguages).toggleStyle(.checkbox).fixedSize() }
+                    }
+                    HStack(spacing: 8) {
+                        TextField("from", text: $from).frame(width: 52)
+                        TextField("to", text: $to).frame(width: 52)
+                        Button("Select Range") { selectRange(rows) }
+                            .disabled(Double(from) == nil && Double(to) == nil).fixedSize()
+                        Spacer(minLength: 4)
+                        Button("Best Picks") { haru.chosen = haru.defaultSelection(list) }
+                            .help("Every chapter once, in your language").fixedSize()
+                        Button("None") { haru.chosen = [] }.fixedSize()
+                    }
                 }
                 .padding(.horizontal, 12).padding(.vertical, 8)
                 Divider()
@@ -218,17 +223,19 @@ struct ChaptersPane: View {
                 }
                 Divider()
                 HStack(spacing: 12) {
-                    Toggle("Convert for Kindle when downloaded", isOn: $haru.convertAfter).toggleStyle(.checkbox)
-                    Toggle("Get failed chapters from other sources", isOn: $haru.autoFallback).toggleStyle(.checkbox)
-                        .help("If a source fails or blocks some chapters, only those chapters are fetched from the next best source")
-                    Spacer()
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle("Convert for Kindle when downloaded", isOn: $haru.convertAfter).toggleStyle(.checkbox).fixedSize()
+                        Toggle("Get failed chapters from other sources", isOn: $haru.autoFallback).toggleStyle(.checkbox).fixedSize()
+                            .help("If a source fails or blocks some chapters, only those chapters are fetched from the next best source")
+                    }
+                    Spacer(minLength: 8)
                     Button {
                         haru.download(convert: haru.convertAfter)
                     } label: {
                         Label(haru.convertAfter ? "Download & Convert \(haru.chosen.count)" : "Download \(haru.chosen.count)",
                               systemImage: "arrow.down.circle.fill")
                     }
-                    .buttonStyle(.borderedProminent).controlSize(.large).disabled(haru.chosen.isEmpty)
+                    .buttonStyle(.borderedProminent).controlSize(.large).disabled(haru.chosen.isEmpty).fixedSize()
                 }
                 .padding(.horizontal, 12).padding(.vertical, 9)
             } else if haru.ranking {

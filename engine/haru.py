@@ -126,6 +126,35 @@ def wait_ready(seconds=90):
     return False
 
 
+SHOW_PATCH = 'const P=(e.BaseWindow||e.BrowserWindow).prototype;if(!P.__mkShow){P.__mkShow=P.show;P.__mkShowInactive=P.showInactive;P.show=function(){const q=global.__mkq;if(q&&q.quiet&&!q.allow.has(this.id)){if(q.pending&&this.webContents&&this.id!==1)q.pending[this.id]={id:this.id,url:this.webContents.getURL(),since:Date.now()};return}return P.__mkShow.apply(this,arguments)};P.showInactive=function(){const q=global.__mkq;if(q&&q.quiet&&!q.allow.has(this.id))return;return P.__mkShowInactive.apply(this,arguments)}}'
+
+
+def hide_early(seconds=40):
+    """Hide HaruNeko's window the moment its main process answers (instead of after it finished loading)."""
+    # a 30 ms watcher inside HaruNeko's main process hides its window before it can draw (works before the window exists)
+    watcher = ("(()=>{const e=process.mainModule.require('electron');if(global.__mkw)return 1;"
+               "if(!global.__mkq)global.__mkq={quiet:true,pending:{},allow:new Set()};" + SHOW_PATCH +
+               "const W=e.BaseWindow||e.BrowserWindow;const until=Date.now()+%d;"
+               "global.__mkw=setInterval(()=>{const q=global.__mkq;"
+               "for(const w of W.getAllWindows()){if(w.isVisible()&&!(q&&q.allow.has(w.id)))w.hide()}"
+               "try{e.app.dock&&e.app.dock.hide()}catch(_){}"
+               "if(Date.now()>until){clearInterval(global.__mkw);global.__mkw=null}},30);return 1})()" % (seconds * 1000))
+    end = time.time() + seconds
+    installed = False
+    while time.time() < end:
+        try:
+            if not installed:
+                installed = bool(main_eval(watcher))
+            if installed and main_eval("(()=>{const e=process.mainModule.require('electron');"
+                                       "return (e.BaseWindow||e.BrowserWindow).getAllWindows().length})()"):
+                quiet()
+                return True
+        except Exception:
+            pass
+        time.sleep(0.05)
+    return False
+
+
 def ensure(restart=False, hide=False):
     if not os.path.exists(EXE):
         return {"state": "missing", "message": f"HaruNeko not found at {APP}"}
@@ -151,8 +180,15 @@ def ensure(restart=False, hide=False):
             except Exception:
                 pass
         time.sleep(1)
-    subprocess.Popen([EXE, f"--remote-debugging-port={PORT}", f"--inspect=127.0.0.1:{MAIN_PORT}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                     stdin=subprocess.DEVNULL, start_new_session=True)
+    args = [f"--remote-debugging-port={PORT}", f"--inspect=127.0.0.1:{MAIN_PORT}"]
+    if hide:
+        # macOS starts it as a hidden, background app: its splash/main window never reach the screen
+        subprocess.run(["/usr/bin/open", "-j", "-g", "-n", "-a", APP, "--args", *args], capture_output=True, timeout=30)
+    else:
+        subprocess.Popen([EXE, *args], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         stdin=subprocess.DEVNULL, start_new_session=True)
+    if hide:
+        hide_early()
     ok = wait_ready(120)
     if ok and hide:
         window("hide")
@@ -176,35 +212,43 @@ def main_eval(expr):
 
 QUIET_JS = r"""(()=>{
   const e = process.mainModule.require('electron');
-  if (!global.__mkq) {
-    global.__mkq = { quiet: true, pending: {}, allow: new Set() };
-    const q = global.__mkq;
-    const mainId = () => Math.min(...e.BrowserWindow.getAllWindows().map(w => w.id));
-    const guard = w => {
-      w.on('show', () => {
-        if (!q.quiet || q.allow.has(w.id)) return;
-        if (w.id !== mainId()) q.pending[w.id] = { id: w.id, url: w.webContents.getURL(), since: Date.now() };
-        setImmediate(() => { try { if (!w.isDestroyed()) w.hide(); } catch (_) {} });
-        try { e.app.dock && e.app.dock.hide(); } catch (_) {}
-      });
-      w.on('closed', () => { delete q.pending[w.id]; q.allow.delete(w.id); });
-    };
-    e.BrowserWindow.getAllWindows().forEach(guard);
-    e.app.on('browser-window-created', (_, w) => guard(w));
-  }
+  const W = e.BaseWindow || e.BrowserWindow;          // HaruNeko's main window is a BaseWindow ("ApplicationWindow")
+  if (!global.__mkq) global.__mkq = { quiet: true, pending: {}, allow: new Set() };
   const q = global.__mkq;
+  if (!q.guarded) q.guarded = new Set();
+  %SHOW_PATCH%;
+  const mainId = () => Math.min(...W.getAllWindows().map(w => w.id));
+  const guard = w => {
+    if (q.guarded.has(w.id)) return;
+    q.guarded.add(w.id);
+    w.on('show', () => {
+      if (!q.quiet || q.allow.has(w.id)) return;
+      if (w.id !== mainId() && w.webContents) q.pending[w.id] = { id: w.id, url: w.webContents.getURL(), since: Date.now() };
+      setImmediate(() => { try { if (!w.isDestroyed()) w.hide(); } catch (_) {} });
+      try { e.app.dock && e.app.dock.hide(); } catch (_) {}
+    });
+    w.on('closed', () => { delete q.pending[w.id]; q.allow.delete(w.id); q.guarded.delete(w.id); });
+  };
+  W.getAllWindows().forEach(guard);
+  if (!q.created) { q.created = true; e.app.on('browser-window-created', (_, w) => guard(w)); }
   q.quiet = true;
-  const all = e.BrowserWindow.getAllWindows();
+  const all = W.getAllWindows();
   const main = Math.min(...all.map(w => w.id));
+  q.allow.delete(main);                               // "Show HaruNeko" earlier: hiding again works
   for (const w of all) {
     if (w.isVisible() && !q.allow.has(w.id)) {
-      if (w.id !== main) q.pending[w.id] = { id: w.id, url: w.webContents.getURL(), since: Date.now() };
+      if (w.id !== main && w.webContents) q.pending[w.id] = { id: w.id, url: w.webContents.getURL(), since: Date.now() };
       w.hide();
     }
   }
   e.app.dock && e.app.dock.hide();
+  // hidden windows get their timers throttled (to once a minute after 5 min) — downloads would crawl
+  try { e.webContents.getAllWebContents().forEach(c => c.setBackgroundThrottling(false)); } catch (_) {}
   return true;
 })()"""
+
+
+QUIET_JS = QUIET_JS.replace("%SHOW_PATCH%", SHOW_PATCH)
 
 
 def quiet():
@@ -214,15 +258,15 @@ def quiet():
 
 def pending_checks():
     js = ("(()=>{const e=process.mainModule.require('electron');const q=global.__mkq;if(!q)return [];"
-          "return Object.values(q.pending).filter(p=>{const w=e.BrowserWindow.fromId(p.id);return w&&!w.isDestroyed()})"
-          ".map(p=>{const w=e.BrowserWindow.fromId(p.id);return {...p,url:w.webContents.getURL()}})})()")
+          "return Object.values(q.pending).filter(p=>{const w=(e.BaseWindow||e.BrowserWindow).fromId(p.id);return w&&!w.isDestroyed()})"
+          ".map(p=>{const w=(e.BaseWindow||e.BrowserWindow).fromId(p.id);return {...p,url:w.webContents.getURL()}})})()")
     return main_eval(js) or []
 
 
 def close_stale(seconds):
     """Close verification windows nobody solved (background loading only) so the waiting source fails fast."""
     js = ("(()=>{const e=process.mainModule.require('electron');const q=global.__mkq;if(!q)return 0;let n=0;"
-          "for(const p of Object.values(q.pending)){if(Date.now()-p.since>%d){const w=e.BrowserWindow.fromId(p.id);"
+          "for(const p of Object.values(q.pending)){if(Date.now()-p.since>%d){const w=(e.BaseWindow||e.BrowserWindow).fromId(p.id);"
           "if(w&&!w.isDestroyed()){w.close();n++}delete q.pending[p.id]}}return n})()" % int(seconds * 1000))
     try:
         return main_eval(js)
@@ -262,12 +306,12 @@ def cfstate(win_id):
     """After "Verify Now": clear once the page is past the challenge (window closed by us), or gone if the user closed it."""
     title = main_eval(UNBLOCK_TITLE % int(win_id))
     if title is None:
-        title = main_eval("(()=>{const e=process.mainModule.require('electron');const w=e.BrowserWindow.fromId(%d);"
+        title = main_eval("(()=>{const e=process.mainModule.require('electron');const w=(e.BaseWindow||e.BrowserWindow).fromId(%d);"
                           "return !w||w.isDestroyed()?null:w.webContents.getTitle()})()" % int(win_id))
     if title is None:
         return {"state": "gone"}
     if title and not any(c in title.lower() for c in CHALLENGE) and not title.startswith("http"):
-        main_eval("(()=>{const e=process.mainModule.require('electron');const w=e.BrowserWindow.fromId(%d);"
+        main_eval("(()=>{const e=process.mainModule.require('electron');const w=(e.BaseWindow||e.BrowserWindow).fromId(%d);"
                   "if(w&&!w.isDestroyed())w.close();return 1})()" % int(win_id))
         return {"state": "clear", "title": title}
     return {"state": "waiting", "title": title}
@@ -275,7 +319,7 @@ def cfstate(win_id):
 
 def verify(win_id):
     """Show one pending verification window so the user can solve it."""
-    js = ("(()=>{const e=process.mainModule.require('electron');const q=global.__mkq;const w=e.BrowserWindow.fromId(%d);"
+    js = ("(()=>{const e=process.mainModule.require('electron');const q=global.__mkq;const w=(e.BaseWindow||e.BrowserWindow).fromId(%d);"
           "if(!w||w.isDestroyed())return false;q.allow.add(w.id);delete q.pending[w.id];w.center();w.show();w.focus();"
           "e.app.focus({steal:true});return true})()" % int(win_id))
     return main_eval(js)
@@ -290,11 +334,11 @@ def window(action):
         except Exception:
             pass
         js = ("(()=>{const e=process.mainModule.require('electron');"
-              "e.BrowserWindow.getAllWindows().forEach(w=>{if(!w.isDestroyed())w.hide()});e.app.dock&&e.app.dock.hide();return true})()")
+              "(e.BaseWindow||e.BrowserWindow).getAllWindows().forEach(w=>{if(!w.isDestroyed())w.hide()});e.app.dock&&e.app.dock.hide();return true})()")
     else:
         js = ("(()=>{const e=process.mainModule.require('electron');const q=global.__mkq;"
-              "e.BrowserWindow.getAllWindows().forEach(w=>q&&q.allow.add(w.id));e.app.dock&&e.app.dock.show();"
-              "const w=e.BrowserWindow.getAllWindows().sort((a,b)=>b.getBounds().width-a.getBounds().width)[0];"
+              "(e.BaseWindow||e.BrowserWindow).getAllWindows().forEach(w=>q&&q.allow.add(w.id));e.app.dock&&e.app.dock.show();"
+              "const w=(e.BaseWindow||e.BrowserWindow).getAllWindows().sort((a,b)=>b.getBounds().width-a.getBounds().width)[0];"
               "if(w){w.show();w.focus()}e.app.focus({steal:true});return true})()")
     try:
         main_eval(js)

@@ -4,6 +4,12 @@ A native SwiftUI Mac app that searches and downloads manga (driving [HaruNeko](h
 the background), merges the chapters in order into one book, converts it with [Kindle Comic Converter](https://github.com/ciromattia/kcc)
 for the Kindle Paperwhite 11th gen (lossless 16-gray AZW3), and copies it to the Kindle over USB.
 
+![Search: every source ranked by how many chapters it has, with a chapter picker](docs/search.png)
+
+| Downloaded series, ready to convert & send | Every step of every book |
+|---|---|
+| ![Downloaded](docs/downloaded.png) | ![Status panel](docs/status.png) |
+
 ## Features
 - Search every HaruNeko source at once; sources ranked by how many chapters they have in your language.
 - Download → convert → send to Kindle automatically; books over ~600 MB are split into parts.
@@ -11,6 +17,8 @@ for the Kindle Paperwhite 11th gen (lossless 16-gray AZW3), and copies it to the
 - Survives quitting the app or restarting the Mac: downloads resume where they stopped.
 - Handles blocked sites: fresh API token on MangaHub-family rate limits; Cloudflare checks via a hidden browser or a “Verify Now” prompt.
 - Status panel: every manga's Download / Convert / Kindle step with progress and done/failed state.
+- HaruNeko stays completely invisible (no window, no Dock icon) unless a site needs a human check.
+- `open -a "Manga to Kindle" --args --search "Dai Dark"` opens the app with a search.
 - “Downloaded” and “On Kindle” views (convert what you already have; list/delete books on the Kindle), safe eject, auto-eject before sleep.
 
 ## Layout

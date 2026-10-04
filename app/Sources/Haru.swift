@@ -223,6 +223,7 @@ final class Haru: ObservableObject {
         resumed = true
         guard let t = try? await call("downloads", as: [DLTask].self, timeout: 30) else { resumed = false; return }
         tasks = t
+        cfTried.formUnion(t.filter { $0.status == "failed" }.map(\.id))
         for b in batches where !b.handled {
             let lost = b.chapterIds.filter { cid in
                 !tasks.contains { $0.chapterId == cid && $0.sourceId == b.sourceId } && fileFor(b, cid) == nil }
@@ -296,6 +297,9 @@ final class Haru: ObservableObject {
                 await refreshStatus()
                 await resume()
                 startPolling()
+                // open -a "Manga to Kindle" --args --search "Dai Dark"
+                let a = CommandLine.arguments
+                if let i = a.firstIndex(of: "--search"), i + 1 < a.count { query = a[i + 1]; search() }
             case "missing":
                 state = .failed("HaruNeko isn't installed (/Applications/HakuNeko.app).")
             default:
@@ -534,8 +538,12 @@ final class Haru: ObservableObject {
     }
 
     private func handleCloudflare() {
+        // only chapters of downloads still in progress — an old failed task left in HaruNeko's list (e.g. of a book that was
+        // finished long ago) must not reopen that download and convert it again
+        let active = batches.filter { !$0.handled }
         let blocked = tasks.filter { t in
-            t.status == "failed" && !cfTried.contains(t.id) && t.errors.contains { $0.localizedCaseInsensitiveContains("cloudflare") } }
+            t.status == "failed" && !cfTried.contains(t.id) && t.errors.contains { $0.localizedCaseInsensitiveContains("cloudflare") }
+            && active.contains { $0.sourceId == t.sourceId && $0.chapterIds.contains(t.chapterId ?? "") } }
         guard !blocked.isEmpty else { return }
         for t in blocked { cfTried.insert(t.id); cfHold[(t.sourceId ?? "") + "|" + (t.chapterId ?? "")] = Date().addingTimeInterval(240) }
         let url = blocked.lazy.compactMap { t in t.errors.lazy.compactMap { e -> String? in
@@ -575,8 +583,9 @@ final class Haru: ObservableObject {
             struct Q: Decodable { var queued: Int }
             _ = try? await call("download", [s, m, ids], as: Q.self, timeout: 120)
         }
-        // their batches are open again until the retry finishes
-        for i in batches.indices where batches[i].handled {
+        // their batches are open again until the retry finishes (only groups that haven't produced a book yet)
+        let pendingGroups = Set(batches.filter { !$0.handled }.map(\.groupId)).union(fixes.map(\.id))
+        for i in batches.indices where batches[i].handled && pendingGroups.contains(batches[i].groupId) {
             if ts.contains(where: { $0.sourceId == batches[i].sourceId && batches[i].chapterIds.contains($0.chapterId ?? "") }) {
                 batches[i].handled = false
             }

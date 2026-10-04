@@ -479,6 +479,14 @@ def run_kcc(opts, src, outdir):
     env["PATH"] = f"{BIN_DIR}:{env.get('PATH', '')}:/usr/local/bin:/opt/homebrew/bin"
     cmd = kcc_cmd(opts, src, outdir)
     log("$ " + " ".join(f'"{c}"' if " " in c else c for c in cmd))
+    # Cap KCC's worker pools (default = every core + 4 parallel kindlegens) and run it at
+    # low priority: full-CPU conversions overheat this Intel MacBook and preceded its
+    # display drop-outs / WindowServer crashes (2026-10-03/04). MK_KCC_PROCS overrides.
+    procs = max(1, int(os.environ.get("MK_KCC_PROCS", "2")))
+    cap = (f"import multiprocessing as m, os, sys, runpy; n={procs}; os.cpu_count = m.cpu_count = lambda: n; "
+           "P = m.Pool; m.Pool = lambda processes=None, *a, **k: P(min(processes or n, n), *a, **k); "
+           "sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], run_name='__main__')")
+    cmd = ["/usr/bin/nice", "-n", "10", cmd[0], "-c", cap] + cmd[1:]
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env,
                          cwd=str(KCC_DIR), errors="replace")
     out = []
