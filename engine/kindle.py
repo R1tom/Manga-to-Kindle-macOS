@@ -13,6 +13,7 @@ the same layout calibre leaves behind.
 """
 import io
 import json
+import re
 import os
 import shutil
 import struct
@@ -129,7 +130,12 @@ def send(files, folder):
         emit("error", message=f"Not enough space on the Kindle: need {need / 1e9:.2f} GB, free {k['free'] / 1e9:.2f} GB.")
         return 3
     total, done_bytes, sent = need, 0, []
-    for f in files:
+    # Gentle copy: Kindles (seen on a jailbroken Paperwhite 11th gen, firmware 5.19.2) drop out of USB mode or freeze
+    # after a few GB at full speed. Sync every 64 MB and pause briefly; ~9 MB/s, and it never froze that way.
+    gentle = os.environ.get("MK_KINDLE_FAST") != "1"
+    for i, f in enumerate(files):
+        if gentle and i:
+            time.sleep(10)
         src = Path(f)
         dst = dest / src.name
         tmp = dest / (".mk-partial-" + src.name)
@@ -142,6 +148,13 @@ def send(files, folder):
                 b.write(chunk)
                 done_bytes += len(chunk)
                 emit("progress", done=done_bytes, total=total, name=src.name)
+                if gentle:
+                    if done_bytes % (64 << 20) < (4 << 20):
+                        b.flush()
+                        os.fsync(b.fileno())
+                        time.sleep(1.0)
+                    else:
+                        time.sleep(0.15)
             b.flush()
             os.fsync(b.fileno())
         if tmp.stat().st_size != src.stat().st_size:
@@ -321,6 +334,69 @@ def eject():
     return 1
 
 
+KOREADER_SETTINGS = {
+    # manga defaults that worked on the Paperwhite 11th gen (2026-10-04)
+    "inverse_reading_order": "true",            # right-to-left page turns (tap left = next)
+    "full_refresh_count": "1",                  # full e-ink refresh on every page: no ghosting
+    "night_full_refresh_count": "1",
+    "kopt_page_scroll": "0",                    # page view, not continuous (pages don't bleed into the next chapter)
+    "kopt_page_gap_height": "0",
+    "kopt_zoom_mode_genus": "4",                # fit the whole page
+    "kopt_zoom_mode_type": "2",
+    "disable_double_tap": "true",               # no 10-page jumps, faster page turns
+    "home_dir": '"/mnt/us/documents/Manga"',
+}
+KOREADER_GESTURES_OFF = ("tap_top_left_corner", "tap_top_right_corner", "tap_left_bottom_corner", "tap_right_bottom_corner",
+                         "one_finger_swipe_bottom_edge_left", "one_finger_swipe_bottom_edge_right")
+
+
+def koreader_setup():
+    """Write the manga settings into KOReader on the Kindle (KOReader must be closed: it rewrites its files on exit)."""
+    k = find_kindle()
+    if not k["found"]:
+        print(json.dumps({"ok": False, "message": "No Kindle connected."}))
+        return 1
+    ko = Path(k["mount"]) / "koreader"
+    if not ko.is_dir():
+        print(json.dumps({"ok": False, "message": "KOReader isn't installed on this Kindle (no koreader folder)."}))
+        return 1
+    changed = []
+
+    def set_keys(path, keys, section=None):
+        s = path.read_text() if path.exists() else "return {\n}\n"
+        for key, val in keys.items():
+            pat = re.compile(r'(\n\s*)\["' + re.escape(key) + r'"\] = (\{[^{}]*\}|[^,\n]+),')
+            if pat.search(s):
+                s = pat.sub(lambda m: f'{m.group(1)}["{key}"] = {val},', s, count=1)
+            else:
+                s = s.rstrip()
+                assert s.endswith("}")
+                s = s[:-1].rstrip() + f'\n    ["{key}"] = {val},\n}}\n'
+        path.write_text(s)
+        changed.append(path.name)
+
+    set_keys(ko / "settings.reader.lua", KOREADER_SETTINGS)
+    # no status-bar tap strip at the bottom edge (in page-flipping mode a tap there jumps to that spot in the book)
+    set_keys(ko / "defaults.custom.lua", {"DTAP_ZONE_MINIBAR": '{ ["h"] = 0, ["w"] = 0, ["x"] = 0, ["y"] = 1, }'})
+    # corner taps / bottom-edge swipes: page flipping, bookmarks, frontlight… easy to hit by accident while reading
+    g = ko / "settings" / "gestures.lua"
+    if g.exists():
+        s = g.read_text()
+        start = s.find('["gesture_reader"]')
+        if start >= 0:
+            head, reader = s[:start], s[start:]          # only the reader's gestures, not the file browser's
+            for name in KOREADER_GESTURES_OFF:
+                reader = re.sub(r'(\["' + name + r'"\] = )\{[^{}]*\}', r"\g<1>{}", reader)
+            g.write_text(head + reader)
+            changed.append(g.name)
+    for junk in ko.rglob("._*"):
+        junk.unlink(missing_ok=True)
+    subprocess.run(["sync"])
+    print(json.dumps({"ok": True, "message": "KOReader is set up for manga: right-to-left, full refresh every page, page view, "
+                                             "no accidental jumps.", "files": changed}))
+    return 0
+
+
 def main():
     a = sys.argv[1:]
     if not a:
@@ -343,6 +419,8 @@ def main():
         return list_all()
     if cmd == "delete":
         return delete(rest)
+    if cmd == "koreader-setup":
+        return koreader_setup()
     if cmd == "eject":
         return eject()
     print(__doc__)

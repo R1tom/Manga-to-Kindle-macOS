@@ -307,6 +307,22 @@ final class KindleDevice: ObservableObject {
         }
     }
 
+    /// Writes the manga settings that worked into KOReader on the Kindle (right-to-left, full refresh, page view, no jumps).
+    func setUpKOReader() {
+        guard connected, !sending else {
+            message = connected ? "Wait until the copy finishes." : "Plug in the Kindle (exit KOReader first)."
+            messageIsError = true
+            return
+        }
+        Task {
+            let (_, out) = await run(["koreader-setup"])
+            let line = out.split(separator: "\n").last.map(String.init) ?? ""
+            let o = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any]
+            message = o?["message"] as? String ?? "Couldn't set up KOReader."
+            messageIsError = (o?["ok"] as? Bool) != true
+        }
+    }
+
     func delete(_ items: [KindleBook]) {
         Task {
             _ = await run(["delete"] + items.map(\.path))

@@ -109,6 +109,7 @@ struct MangaToKindleApp: App {
         .commands {
             CommandMenu("Kindle") {
                 Button("Eject Kindle") { KindleDevice.shared.eject() }.keyboardShortcut("e", modifiers: .command)
+                Button("Set Up KOReader for Manga") { KindleDevice.shared.setUpKOReader() }
                 Button("Show Books on Kindle") { UserDefaults.standard.set("device", forKey: "mainMode") }
             }
             CommandGroup(replacing: .newItem) {

@@ -22,6 +22,9 @@ enum Tools {
         e["PYTHONIOENCODING"] = "utf-8"
         e["MK_KCC_DIR"] = kccDir
         e["MK_BIN_DIR"] = binDir
+        // how many threads Kindle Comic Converter may use (2 keeps this MacBook cool; more is faster with the fan up)
+        let threads = UserDefaults.standard.integer(forKey: "kccThreads")
+        e["MK_KCC_PROCS"] = String(threads > 0 ? threads : 2)
         e["LANG"] = e["LANG"] ?? "en_US.UTF-8"
         return e
     }
@@ -452,7 +455,7 @@ final class Job: ObservableObject {
 
     /// The Kindle books from the last conversion (with "Both", the AZW3 copies — one of each book is enough).
     var kindleFiles: [String] {
-        let books = resultFiles.filter { $0.hasSuffix(".azw3") || $0.hasSuffix(".mobi") || $0.hasSuffix(".kfx") }
+        let books = resultFiles.filter { $0.hasSuffix(".azw3") || $0.hasSuffix(".mobi") || $0.hasSuffix(".kfx") || $0.hasSuffix(".pdf") }
         let azw3 = books.filter { $0.hasSuffix(".azw3") }
         return azw3.isEmpty ? books : azw3
     }

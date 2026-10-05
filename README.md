@@ -13,9 +13,15 @@ for the Kindle Paperwhite 11th gen (lossless 16-gray AZW3), and copies it to the
 ## Features
 - Search every HaruNeko source at once; sources ranked by how many chapters they have in your language.
 - Download → convert → send to Kindle automatically; books over ~600 MB are split into parts.
-- **KFX output** — Kindle firmware 5.19.2 broke sideloaded AZW3/MOBI comics (ghosting / leftovers of the previous page,
-  white borders) and older Kindles like the Paperwhite 11th gen never got the fix. KFX, Kindle's native format, avoids it.
-  Uses [kindle-comic-workaround-5.19.x](https://github.com/HankunYu/kindle-comic-workaround-5.19.x) (cloned by `setup.sh`).
+- **PDF for KOReader** (recommended on a Paperwhite 11th gen): lossless pages at the device's exact resolution, a chapter list,
+  split at chapter boundaries for big series. Kindle firmware 5.19.2 makes sideloaded AZW3/MOBI/KFX comics ghost (leftovers of the
+  previous page, even with Page Refresh on) and older Kindles never got the fix; KOReader on a jailbroken Kindle reads these PDFs
+  right-to-left with a full refresh on every page. **Kindle → Set Up KOReader for Manga** writes those settings (page view, fit page,
+  no page gap, no accidental jumps from corner/bottom-edge taps, double-tap off).
+- Gentle copying to the Kindle (synced in chunks with short pauses) — sustained full-speed transfers made the Kindle drop out of USB mode.
+- Conversion speed: Cool (2 threads) or Fast (all but one thread).
+- KFX output via [kindle-comic-workaround-5.19.x](https://github.com/HankunYu/kindle-comic-workaround-5.19.x) (cloned by `setup.sh`)
+  for the Kindle's own reader — it fixes white borders on 5.19.x, but not the ghosting.
 - Failed chapters are fetched from the next best source automatically (only the missing ones); one book in the end.
 - Survives quitting the app or restarting the Mac: downloads resume where they stopped.
 - Handles blocked sites: fresh API token on MangaHub-family rate limits; Cloudflare checks via a hidden browser or a “Verify Now” prompt.

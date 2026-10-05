@@ -34,7 +34,7 @@ final class Downloads: ObservableObject {
     nonisolated static func scan(root: String, output: String) -> [DownloadedSeries] {
         let fm = FileManager.default
         let books = (try? fm.contentsOfDirectory(atPath: output))?.filter {
-            ["azw3", "mobi", "kfx"].contains(($0 as NSString).pathExtension.lowercased()) } ?? []
+            ["azw3", "mobi", "kfx", "pdf"].contains(($0 as NSString).pathExtension.lowercased()) } ?? []
         func norm(_ s: String) -> String {
             s.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.map(String.init).joined()
         }

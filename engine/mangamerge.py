@@ -429,7 +429,8 @@ def extract_unit(item, dst):
 # ---------------------------------------------------------------- build
 
 def kcc_cmd(opts, src, outdir):
-    cmd = [sys.executable, str(KCC_DIR / "kcc-c2e.py"), "-p", opts.get("profile", PROFILE), "-f", "MOBI",
+    kcc_fmt = "CBZ" if opts.get("format", "").lower() == "pdf" else "MOBI"   # PDF: processed pages, then pdfbook.py
+    cmd = [sys.executable, str(KCC_DIR / "kcc-c2e.py"), "-p", opts.get("profile", PROFILE), "-f", kcc_fmt,
            "-t", opts["title"], "-o", str(outdir)]
     if opts.get("author"):
         cmd += ["-a", opts["author"]]
@@ -577,6 +578,8 @@ def build(plan):
         kcc_out = work / "out"
         kcc_out.mkdir()
         code, text = run_kcc(opts, book, kcc_out)
+        if fmt == "pdf":
+            return finish_pdf(opts, code, text, kcc_out, outdir, results, pages_total, total, problems)
         made = sorted(kcc_out.glob("*.mobi"))
         if (code != 0 or not made) and not opts.get("split") and ("23026" in text or "too big" in text.lower()
                                                                     or "EPUB too big" in text):
@@ -640,6 +643,25 @@ def build(plan):
     finally:
         if not os.environ.get("MK_KEEP_WORK"):
             shutil.rmtree(work, ignore_errors=True)
+
+
+def finish_pdf(opts, code, text, kcc_out, outdir, results, pages_total, total, problems):
+    """KCC's processed CBZ -> lossless PDF(s) with a chapter list, for KOReader (and the Kindle's PDF reader)."""
+    made = sorted(kcc_out.glob("*.cbz"))
+    if code != 0 or not made:
+        lines = [l.strip() for l in text.splitlines() if l.strip()]
+        emit("error", message=f"Kindle Comic Converter failed (exit {code}): {(lines[-1] if lines else 'no output')[:400]}")
+        return 4
+    sys.path.insert(0, str(HERE))
+    import pdfbook
+    emit("stage", stage="pdf", message="Writing PDF")
+    files = pdfbook.cbz_to_pdf(made[0], outdir, opts["title"], author=opts.get("author") or "",
+                               progress=lambda d, t: emit("progress", stage="pdf", done=d, total=t, message=f"{d}/{t} pages"))
+    for f in files:
+        results.append(str(f))
+        log(f"Kindle file: {f}  ({f.stat().st_size / 1048576:.1f} MB)")
+    emit("done", files=results, pages=pages_total, chapters=total - len(problems), skipped=problems)
+    return 0
 
 
 def to_kf8(src, dst):

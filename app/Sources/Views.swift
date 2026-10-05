@@ -287,13 +287,15 @@ struct SidePanel: View {
                 Section("Kindle") {
                     LabeledContent("Device", value: "Paperwhite 11th gen (KPW5, 1236×1648)")
                     Picker("Format", selection: $job.format) {
+                        Text("PDF").tag("pdf")
                         Text("KFX").tag("kfx")
                         Text("AZW3").tag("azw3")
                         Text("MOBI").tag("mobi")
                         Text("Both").tag("both")
                     }.pickerStyle(.segmented)
-                    .help("KFX: Kindle's own format — use it if pages show ghosting / leftovers of the previous page or white borders "
-                          + "(Kindle firmware 5.19.2 broke sideloaded AZW3/MOBI comics on older Kindles such as the Paperwhite 11th gen).")
+                    .help("PDF: lossless pages + chapter list, for KOReader (right-to-left, full refresh every page). Also opens in the Kindle's "
+                          + "own PDF reader without ghosting, but only left-to-right. "
+                          + "AZW3/MOBI/KFX: the Kindle's own reader — on firmware 5.19.2 (Paperwhite 11th gen) these ghost; KOReader can't open AZW3/KFX.")
                     Toggle("Manga (right-to-left)", isOn: $job.manga)
                     Toggle("Webtoon / long strip", isOn: $job.webtoon)
                     Picker("Image", selection: $job.imageMode) {
@@ -336,6 +338,14 @@ struct SidePanel: View {
                         Spacer()
                         Button("Change…") { chooseOutput() }
                     }
+                    Picker("Conversion speed", selection: Binding(
+                        get: { max(2, UserDefaults.standard.integer(forKey: "kccThreads")) },
+                        set: { UserDefaults.standard.set($0, forKey: "kccThreads") })) {
+                        Text("Cool (2 threads)").tag(2)
+                        Text("Fast (\(max(3, ProcessInfo.processInfo.activeProcessorCount - 1)) threads, fan up)")
+                            .tag(max(3, ProcessInfo.processInfo.activeProcessorCount - 1))
+                    }
+                    .help("Fast converts about 3× quicker but runs the Mac hot — turn the fan up first.")
                     Toggle("Also save merged CBZ", isOn: $job.keepCbz)
                     Toggle("Send to Kindle when done", isOn: $kindle.autoSend)
                         .help("Copies the book to the Kindle's documents/\(kindle.folder) folder. If the Kindle isn't plugged in, it's sent as soon as it is.")
