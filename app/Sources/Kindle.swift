@@ -214,6 +214,14 @@ final class KindleDevice: ObservableObject {
     func send(_ files: [String]) {
         let books = files.filter { ["azw3", "mobi", "azw", "kfx", "pdf", "epub"].contains(URL(fileURLWithPath: $0).pathExtension.lowercased()) }
         guard !books.isEmpty else { return }
+        // ebooks (from the Books search) go to documents/Books, manga to documents/<folder>
+        let isEbook: (String) -> Bool = { $0.hasPrefix(BookStore.outputDir + "/") }
+        if books.contains(where: isEbook) && !books.allSatisfy(isEbook) {
+            send(books.filter { !isEbook($0) })
+            send(books.filter(isEbook))
+            return
+        }
+        let target = books.allSatisfy(isEbook) ? "Books" : folder
         let titles = Array(Set(books.compactMap { Status.shared.title(forFile: $0) }))
         guard connected else {
             for t in titles { Status.shared.set(t, \.send, .waiting, "Waiting for the Kindle — plug it in and it's copied automatically") }
@@ -234,7 +242,7 @@ final class KindleDevice: ObservableObject {
         sendActivity = ProcessInfo.processInfo.beginActivity(options: [.idleSystemSleepDisabled, .userInitiated],
                                                              reason: "Copying books to the Kindle")
         let useCalibre = method == "calibre" && calibreInstalled
-        let args = useCalibre ? ["calibre-send", "Manga to Kindle"] + books : ["send", "--folder", folder] + books
+        let args = useCalibre ? ["calibre-send", "Manga to Kindle"] + books : ["send", "--folder", target] + books
         if useCalibre { sendName = "via calibre…" }
         Task {
             var failure: String?
@@ -258,10 +266,10 @@ final class KindleDevice: ObservableObject {
             sending = false
             if let a = sendActivity { ProcessInfo.processInfo.endActivity(a); sendActivity = nil }
             if code == 0 && failure == nil {
-                message = "Sent \(sentCount) book\(sentCount == 1 ? "" : "s") to the Kindle (documents/\(useCalibre ? "Manga to Kindle" : folder))."
+                message = "Sent \(sentCount) book\(sentCount == 1 ? "" : "s") to the Kindle (documents/\(useCalibre ? "Manga to Kindle" : target))."
                 messageIsError = false
                 for t in titles {
-                    Status.shared.set(t, \.send, .done, "On the Kindle (documents/\(useCalibre ? "Manga to Kindle" : folder)) — eject before unplugging")
+                    Status.shared.set(t, \.send, .done, "On the Kindle (documents/\(useCalibre ? "Manga to Kindle" : target)) — eject before unplugging")
                 }
                 refresh(); loadBooks()
                 if ejectAfter { eject() }

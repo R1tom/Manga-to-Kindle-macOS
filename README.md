@@ -11,6 +11,9 @@ for the Kindle Paperwhite 11th gen (lossless 16-gray AZW3), and copies it to the
 | ![Downloaded](docs/downloaded.png) | ![Status panel](docs/status.png) |
 
 ## Features
+- **Books** (not manga): search Project Gutenberg, Standard Ebooks and your own Calibre library; books are sent as **AZW3**,
+  the Kindle's own format (Standard Ebooks' own Kindle edition when available, otherwise converted with calibre's Paperwhite
+  profile), into `documents/Books` on the Kindle. Only free, legal sources.
 - Search every HaruNeko source at once; sources ranked by how many chapters they have in your language.
 - Download → convert → send to Kindle automatically; books over ~600 MB are split into parts.
 - **PDF for KOReader** (recommended on a Paperwhite 11th gen): lossless pages at the device's exact resolution, a chapter list,
@@ -41,7 +44,7 @@ for the Kindle Paperwhite 11th gen (lossless 16-gray AZW3), and copies it to the
 # put kindlegen at bin/kindlegen (extract from Kindle Previewer: pkgutil --expand-full, KFXGen/bin/kindlegen)
 cd app && ./build.sh       # → app/build/Manga to Kindle.app
 ```
-Requires HaruNeko at `/Applications/HakuNeko.app`.
+Requires HaruNeko at `/Applications/HakuNeko.app`, and [calibre](https://calibre-ebook.com) for book conversion.
 
 ## License
 Copyright (C) 2026 Ritom Puzari

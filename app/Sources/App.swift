@@ -61,6 +61,7 @@ struct ContentView: View {
                 case "files": FilesPane()
                 case "library": DownloadsPane()
                 case "device": DevicePane()
+                case "books": BooksPane()
                 default: SearchView()
                 }
                 DownloadsBar()
@@ -79,6 +80,10 @@ struct ContentView: View {
                     Label("Downloaded", systemImage: "tray.full")
                 }
                 .help("Manga already downloaded to the HaruNeko folder — convert and send them to the Kindle")
+                Button { mode = mode == "books" ? "search" : "books" } label: {
+                    Label("Books", systemImage: "book")
+                }
+                .help("Search books (not manga) — sent to the Kindle as AZW3, its own format")
                 Button { mode = mode == "device" ? "search" : "device" } label: {
                     Label("On Kindle", systemImage: "books.vertical")
                 }
@@ -93,7 +98,14 @@ struct ContentView: View {
         .navigationSubtitle(job.chapters.isEmpty ? "Kindle Paperwhite 11th gen" :
             "\(job.title) · \(job.selected.count) chapters · \(job.selectedPages) pages")
         .onReceive(NotificationCenter.default.publisher(for: .showConverter)) { _ in mode = "files" }
-        .onAppear { Haru.shared.start(); _ = KindleDevice.shared }
+        .onAppear {
+            Haru.shared.start(); _ = KindleDevice.shared
+            // open -a "Manga to Kindle" --args --book-search "pride and prejudice"
+            let a = CommandLine.arguments
+            if let i = a.firstIndex(of: "--book-search"), i + 1 < a.count {
+                mode = "books"; BookStore.shared.query = a[i + 1]; BookStore.shared.search()
+            }
+        }
     }
 }
 
