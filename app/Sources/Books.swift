@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - ebooks (not manga): search free legal sources, get them as AZW3 for the Kindle's own reader
 
@@ -83,6 +84,50 @@ final class BookStore: ObservableObject {
         }
     }
 
+    nonisolated static let bookExtensions: Set<String> = ["epub", "mobi", "azw", "azw3", "kfx", "prc", "docx", "doc", "txt", "fb2",
+                                                         "rtf", "htm", "html", "odt", "lit", "pdb", "htmlz", "txtz", "pdf"]
+    @Published var importing: [String] = []            // file names being added
+
+    /// Books from the user's drive: AZW3 (converted with calibre) or kept as is (AZW3/KFX/PDF) → Kindle documents/Books
+    func addLocal(_ paths: [String]) {
+        for path in paths {
+            let url = URL(fileURLWithPath: path)
+            guard BookStore.bookExtensions.contains(url.pathExtension.lowercased()) else { continue }
+            let stem = url.deletingPathExtension().lastPathComponent
+            importing.append(url.lastPathComponent)
+            Status.shared.start(stem, download: false, convert: true)
+            Status.shared.set(stem, \.convert, .active, ["azw3", "kfx", "pdf"].contains(url.pathExtension.lowercased())
+                              ? "Already a Kindle format — copying" : "Converting to AZW3 (Kindle format)…")
+            Task {
+                let (code, out) = await engine(["local", path])
+                importing.removeAll { $0 == url.lastPathComponent }
+                let line = out.split(separator: "\n").last { $0.hasPrefix("@@{\"type\": \"done\"") || $0.contains("\"error\"") }
+                let o = line.flatMap { try? JSONSerialization.jsonObject(with: Data($0.dropFirst(2).utf8)) as? [String: Any] }
+                guard code == 0, let file = (o?["files"] as? [String])?.first else {
+                    Status.shared.set(stem, \.convert, .failed, o?["message"] as? String ?? "Couldn't add \(url.lastPathComponent)")
+                    Status.shared.set(stem, \.send, .skipped, "—")
+                    return
+                }
+                let title = (o?["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? stem
+                if title != stem { Status.shared.remove(Status.key(stem)); Status.shared.start(title, download: false, convert: true) }
+                let size = ByteCountFormatter.string(fromByteCount: (o?["size"] as? NSNumber)?.int64Value ?? 0, countStyle: .file)
+                Status.shared.set(title, \.convert, .done, "\(URL(fileURLWithPath: file).pathExtension.uppercased()) · \(size) · from \(url.lastPathComponent)")
+                Status.shared.setBooks(title, [file])
+                if KindleDevice.shared.autoSend { KindleDevice.shared.send([file]) }
+                else { Status.shared.set(title, \.send, .skipped, "Auto-send is off — use “Send”") }
+            }
+        }
+    }
+
+    func pickLocal() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true; panel.canChooseDirectories = false; panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = BookStore.bookExtensions.compactMap { UTType(filenameExtension: $0) }
+        panel.message = "Choose books to add to the Kindle (EPUB, MOBI, AZW3, PDF, DOCX, TXT…)"
+        panel.prompt = "Add to Kindle"
+        if panel.runModal() == .OK { addLocal(panel.urls.map(\.path)) }
+    }
+
     /// download (or copy from Calibre) → AZW3 → send to the Kindle's Books folder
     func get(_ hit: BookHit) {
         guard !getting.contains(hit.id) else { return }
@@ -135,6 +180,14 @@ struct BooksPane: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if !store.importing.isEmpty {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Adding \(store.importing.joined(separator: ", "))…").lineLimit(1).font(.callout)
+                    Spacer()
+                }
+                .padding(.horizontal, 12).padding(.vertical, 6).background(Color.accentColor.opacity(0.08))
+            }
             HStack(spacing: 10) {
                 Image(systemName: "book.closed").foregroundStyle(.secondary)
                 TextField("Search books by title or author (Project Gutenberg, Standard Ebooks, your Calibre library)",
@@ -143,6 +196,9 @@ struct BooksPane: View {
                     .onSubmit { store.search() }
                 Button("Search") { store.search() }.keyboardShortcut(.defaultAction)
                     .disabled(store.query.trimmingCharacters(in: .whitespaces).isEmpty || store.searching)
+                Divider().frame(height: 18)
+                Button { store.pickLocal() } label: { Label("Add Files…", systemImage: "plus.circle") }
+                    .help("Add books from your drive (EPUB, MOBI, AZW3, PDF, DOCX, TXT…) — or drag them here")
             }
             .padding(.horizontal, 12).padding(.vertical, 9)
             Divider()
@@ -156,6 +212,8 @@ struct BooksPane: View {
                         .foregroundStyle(.secondary)
                     Text("Free, legal sources: public-domain books from Project Gutenberg and Standard Ebooks, plus your own Calibre library.")
                         .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    Text("Or drop book files here (EPUB, MOBI, AZW3, PDF, DOCX, TXT…) — they're converted to AZW3 and sent to the Kindle.")
+                        .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.top, 6)
                     ForEach(store.errors, id: \.self) { Text($0).font(.caption).foregroundStyle(.orange) }
                 }.padding().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {

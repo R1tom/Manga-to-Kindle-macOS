@@ -63,7 +63,21 @@ struct FileDrop: ViewModifier {
                 g.leave()
             }
         }
-        g.notify(queue: .main) { MainActor.assumeIsolated { job.open(urls.sorted()); mode = "files" } }
+        g.notify(queue: .main) {
+            MainActor.assumeIsolated {
+                // On the Books page every file is a book. Elsewhere, ebook files go to Books and the rest (chapter
+                // archives, folders, PDFs) to the manga converter as before.
+                let onBooksPage = mode == "books"
+                let ebookOnly: Set<String> = BookStore.bookExtensions.subtracting(["pdf"])
+                let isBook: (String) -> Bool = { p in
+                    let e = URL(fileURLWithPath: p).pathExtension.lowercased()
+                    return onBooksPage ? BookStore.bookExtensions.contains(e) : ebookOnly.contains(e)
+                }
+                let books = urls.filter(isBook), manga = urls.filter { !isBook($0) }
+                if !manga.isEmpty && !onBooksPage { job.open(manga.sorted()); mode = "files" }
+                if !books.isEmpty { BookStore.shared.addLocal(books.sorted()); mode = "books" }
+            }
+        }
     }
 }
 

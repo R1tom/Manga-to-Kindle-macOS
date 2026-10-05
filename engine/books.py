@@ -183,8 +183,9 @@ def convert(src, dst, item, cover=None):
     """Any ebook -> AZW3 for the Kindle's own reader (calibre, Paperwhite profile, metadata + cover kept)."""
     if not Path(EBOOK_CONVERT).exists():
         raise RuntimeError("calibre isn't installed (needed to make AZW3 files): https://calibre-ebook.com")
-    cmd = [EBOOK_CONVERT, str(src), str(dst), "--output-profile", PROFILE,
-           "--title", item["title"], "--authors", (item.get("author") or "Unknown").replace(", ", " & ")]
+    cmd = [EBOOK_CONVERT, str(src), str(dst), "--output-profile", PROFILE]
+    if not item.get("keep_metadata"):      # local files: keep the title/author/cover inside the book
+        cmd += ["--title", item["title"], "--authors", (item.get("author") or "Unknown").replace(", ", " & ")]
     if cover and Path(cover).exists():
         cmd += ["--cover", str(cover)]
     emit("stage", stage="convert", message="Converting to AZW3 (Kindle format)")
@@ -229,6 +230,52 @@ def get(item):
     return 0
 
 
+KEEP_AS_IS = {".azw3", ".kfx", ".pdf"}          # already Kindle formats (PDF: converting would wreck the layout)
+CONVERTIBLE = {".epub", ".mobi", ".azw", ".prc", ".docx", ".doc", ".txt", ".fb2", ".rtf", ".htm", ".html", ".odt",
+               ".lit", ".pdb", ".htmlz", ".txtz", ".snb", ".tcr", ".lrf"}
+
+
+def read_meta(path):
+    """Title and author stored inside a book (calibre's ebook-meta); empty if it can't tell."""
+    tool = Path(EBOOK_CONVERT).with_name("ebook-meta")
+    if not tool.exists():
+        return "", ""
+    try:
+        out = subprocess.run([str(tool), str(path)], capture_output=True, text=True, timeout=60).stdout
+    except Exception:
+        return "", ""
+    title = re.search(r"^Title\s*:\s*(.+)$", out, re.M)
+    author = re.search(r"^Author\(s\)\s*:\s*(.+?)(?:\s*\[.*\])?$", out, re.M)
+    t = title.group(1).strip() if title else ""
+    a = author.group(1).strip() if author else ""
+    if a.lower() in ("unknown", ""):
+        a = ""
+    return t, a
+
+
+def add_local(path):
+    """A book from the user's drive -> AZW3 (or kept as is if it's already a Kindle format) in the Books output folder."""
+    src = Path(path)
+    OUTPUT.mkdir(parents=True, exist_ok=True)
+    ext = src.suffix.lower()
+    title, author = read_meta(src) if ext not in (".txt", ".pdf") else ("", "")
+    if not title or title.lower() in (src.stem.lower(), "unknown"):
+        title = src.stem
+    name = safe(f"{title} - {author}" if author else title)
+    if ext in KEEP_AS_IS:
+        out = OUTPUT / (name + ext)
+        emit("stage", stage="download", message=f"Copying {src.name} (already a Kindle format)")
+        if out.resolve() != src.resolve():
+            shutil.copyfile(src, out)
+    elif ext in CONVERTIBLE:
+        out = OUTPUT / (name + ".azw3")
+        convert(src, out, {"title": src.stem, "keep_metadata": True})
+    else:
+        raise RuntimeError(f"{src.name}: not a book format the Kindle or calibre can use")
+    emit("done", files=[str(out)], title=title, author=author, size=out.stat().st_size)
+    return 0
+
+
 def main():
     a = sys.argv[1:]
     if not a:
@@ -237,6 +284,12 @@ def main():
     if a[0] == "search":
         print(json.dumps(search(a[1], a[2] if len(a) > 2 else "en"), ensure_ascii=False))
         return 0
+    if a[0] == "local":
+        try:
+            return add_local(a[1])
+        except Exception as e:
+            emit("error", message=str(e))
+            return 2
     if a[0] == "get":
         try:
             return get(json.loads(a[1]))

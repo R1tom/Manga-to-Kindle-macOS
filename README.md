@@ -14,6 +14,8 @@ for the Kindle Paperwhite 11th gen (lossless 16-gray AZW3), and copies it to the
 - **Books** (not manga): search Project Gutenberg, Standard Ebooks and your own Calibre library; books are sent as **AZW3**,
   the Kindle's own format (Standard Ebooks' own Kindle edition when available, otherwise converted with calibre's Paperwhite
   profile), into `documents/Books` on the Kindle. Only free, legal sources.
+- **Your own books**: *Add Files…* on the Books page, or drag them onto the window — EPUB, MOBI, DOCX, TXT, FB2, RTF, HTML…
+  become AZW3 (title/author/cover from the book itself); AZW3, KFX and PDF are copied as they are.
 - Search every HaruNeko source at once; sources ranked by how many chapters they have in your language.
 - Download → convert → send to Kindle automatically; books over ~600 MB are split into parts.
 - **PDF for KOReader** (recommended on a Paperwhite 11th gen): lossless pages at the device's exact resolution, a chapter list,
