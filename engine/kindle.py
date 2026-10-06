@@ -389,6 +389,23 @@ def koreader_setup():
                 reader = re.sub(r'(\["' + name + r'"\] = )\{[^{}]*\}', r"\g<1>{}", reader)
             g.write_text(head + reader)
             changed.append(g.name)
+    # every book KOReader has opened keeps its own view settings (a stray tap on the bottom menu can switch one to
+    # "fit width"/continuous): put the PDFs back to page view + fit full page, keeping the reading position
+    fixed = 0
+    for meta in (Path(k["mount"]) / "documents").rglob("metadata.pdf.lua"):
+        try:
+            s = meta.read_text()
+            s2 = s
+            for key, val in (("kopt_page_scroll", "0"), ("kopt_page_gap_height", "0"),
+                             ("kopt_zoom_mode_genus", "4"), ("kopt_zoom_mode_type", "2")):
+                s2 = re.sub(r'(\["' + key + r'"\] = )[^,\n]+,', r"\g<1>" + val + ",", s2)
+            if s2 != s:
+                meta.write_text(s2)
+                fixed += 1
+        except OSError:
+            pass
+    if fixed:
+        changed.append(f"{fixed} book setting(s)")
     for junk in ko.rglob("._*"):
         junk.unlink(missing_ok=True)
     subprocess.run(["sync"])

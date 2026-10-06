@@ -265,6 +265,15 @@ def apply_default_selection(items, lang):
             return i["chText"] if i["ch"] is not None else "name:" + i["name"]
         have = {ch_key(i) for i in pool}
         pool += [i for i in items if not i["lang"] and i["pages"] > 0 and i["ch"] is not None and ch_key(i) not in have]
+    # A "chapter" that is really a whole volume (e.g. MangaFire's "Ch. 0 Volume 33", 190 pages) would land at the front
+    # of the book and repeat chapters that are there anyway: leave such bundles out (they can still be ticked by hand).
+    sizes = sorted(i["pages"] for i in pool)
+    median = sizes[len(sizes) // 2] if sizes else 0
+    if len(pool) >= 5:
+        for i in pool:
+            if i["pages"] >= max(80, 3 * median) and re.search(r"(?<![a-z])vol(?:ume)?\b", i["name"], re.I):
+                i["bundle"] = True
+        pool = [i for i in pool if not i.get("bundle")]
     group_cov = Counter(i["group"] or "" for i in pool)
     by_ch = defaultdict(list)
     for i in pool:
