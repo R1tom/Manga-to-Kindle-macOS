@@ -53,6 +53,7 @@ final class KindleDevice: ObservableObject {
     @Published var messageIsError = false
     @Published var waiting: [String] = []   // files to send as soon as the Kindle is plugged in
     @Published var ejecting = false
+    @Published var fixing = false            // removing duplicate spread pages (spreadfix.py)
 
     @Published var folder: String = UserDefaults.standard.string(forKey: "kindleFolder") ?? "Manga" {
         didSet { UserDefaults.standard.set(folder, forKey: "kindleFolder") } }
@@ -165,8 +166,8 @@ final class KindleDevice: ObservableObject {
 
     // MARK: running the engine
 
-    private func run(_ args: [String], onLine: ((String) -> Void)? = nil) async -> (Int32, String) {
-        let python = Tools.python, script = Tools.res + "/engine/kindle.py", env = Tools.env
+    private func run(_ args: [String], engine: String = "kindle.py", onLine: ((String) -> Void)? = nil) async -> (Int32, String) {
+        let python = Tools.python, script = Tools.res + "/engine/" + engine, env = Tools.env
         let useCalibre = args.first == "calibre-send"
         return await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -230,7 +231,7 @@ final class KindleDevice: ObservableObject {
             messageIsError = false
             return
         }
-        guard !sending else {
+        guard !sending && !fixing else {
             for t in titles { Status.shared.set(t, \.send, .waiting, "In line — another book is being copied") }
             waiting.append(contentsOf: books); return
         }
@@ -331,6 +332,56 @@ final class KindleDevice: ObservableObject {
         }
     }
 
+    /// Strip the sideways copy of every split two-page spread ("Both" mode made each spread page show up twice).
+    /// Paths can be Mac copies (~/Documents/Kindle) or books on the Kindle; the Mac copy is fixed (lossless, the
+    /// pages are only removed), then copied over the Kindle's copy and the KOReader reading position moved to match.
+    func removeDuplicateSpreads(_ paths: [String]) {
+        let pdfs = paths.filter { $0.lowercased().hasSuffix(".pdf") }
+        guard !pdfs.isEmpty else { message = "Only PDF books can be fixed."; messageIsError = true; return }
+        guard !fixing, !sending else { message = "Wait until the current copy or fix finishes."; messageIsError = true; return }
+        fixing = true
+        message = "Checking for duplicate spread pages…"; messageIsError = false
+        let activity = ProcessInfo.processInfo.beginActivity(options: [.idleSystemSleepDisabled, .userInitiated],
+                                                             reason: "Removing duplicate spread pages")
+        Task {
+            var result: String?, ok = false
+            let (code, _) = await run(["fix"] + pdfs, engine: "spreadfix.py") { [weak self] line in
+                guard let self, line.hasPrefix("@@"),
+                      let o = try? JSONSerialization.jsonObject(with: Data(line.dropFirst(2).utf8)) as? [String: Any] else { return }
+                MainActor.assumeIsolated {
+                    switch o["type"] as? String {
+                    case "stage": self.message = o["message"] as? String ?? self.message
+                    case "progress":
+                        if let m = o["message"] as? String { self.message = m }
+                        else if let d = (o["done"] as? NSNumber)?.doubleValue, let t = (o["total"] as? NSNumber)?.doubleValue, t > 0 {
+                            self.message = "Copying \(o["name"] as? String ?? "book") to the Kindle… \(Int(d / t * 100))%"
+                        }
+                    case "result":
+                        result = o["message"] as? String
+                        ok = o["ok"] as? Bool ?? false
+                    default: break
+                    }
+                }
+            }
+            ProcessInfo.processInfo.endActivity(activity)
+            fixing = false
+            message = result ?? "Removing duplicate pages failed (exit \(code))."
+            messageIsError = !(ok && code == 0)
+            refresh(); loadBooks(); if connected { loadAll() }
+            if !waiting.isEmpty && connected { let next = waiting; waiting = []; send(next) }
+        }
+    }
+
+    /// Every manga PDF on the Kindle (documents/<manga folder>).
+    func fixAllMangaSpreads() {
+        guard let m = mount else { message = "Plug in the Kindle first."; messageIsError = true; return }
+        let dir = m + "/documents/" + folder
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
+        let pdfs = names.filter { $0.lowercased().hasSuffix(".pdf") && !$0.hasPrefix(".") }.sorted().map { dir + "/" + $0 }
+        guard !pdfs.isEmpty else { message = "No PDF manga in documents/\(folder)."; messageIsError = true; return }
+        removeDuplicateSpreads(pdfs)
+    }
+
     func delete(_ items: [KindleBook]) {
         Task {
             _ = await run(["delete"] + items.map(\.path))
@@ -339,7 +390,7 @@ final class KindleDevice: ObservableObject {
     }
 
     func eject() {
-        guard connected, !sending else { return }
+        guard connected, !sending, !fixing else { return }
         ejecting = true
         Task {
             let (_, out) = await run(["eject"])
@@ -441,6 +492,8 @@ struct KindlePanel: View {
             .overlay { if k.books.isEmpty { Text(k.connected ? "No books in this folder yet" : "—").foregroundStyle(.secondary) } }
             .contextMenu(forSelectionType: String.self) { ids in
                 Button("Delete from Kindle") { k.delete(k.books.filter { ids.contains($0.id) }) }
+                Button("Remove Duplicate Spread Pages") { k.removeDuplicateSpreads(k.books.filter { ids.contains($0.id) }.map(\.path)) }
+                    .disabled(k.fixing)
             }
             HStack {
                 Button("Delete Selected") { k.delete(k.books.filter { selection.contains($0.id) }); selection = [] }
@@ -565,12 +618,16 @@ struct DevicePane: View {
                 .contextMenu(forSelectionType: String.self) { ids in
                     let items = k.allBooks.filter { ids.contains($0.id) }
                     Button("Delete \(items.count == 1 ? "Book" : "\(items.count) Books") from Kindle…") { confirm = items }
+                    if items.contains(where: { $0.ext.lowercased() == "pdf" }) {
+                        Button("Remove Duplicate Spread Pages") { k.removeDuplicateSpreads(items.map(\.path)) }
+                            .disabled(k.fixing)
+                    }
                 }
                 .onDeleteCommand { if !picked.isEmpty { confirm = picked } }
             }
             Divider()
             HStack(spacing: 10) {
-                if let m = k.message { Text(m).font(.callout).foregroundStyle(k.messageIsError ? .red : .secondary).lineLimit(1) }
+                if let m = k.message { Text(m).font(.callout).foregroundStyle(k.messageIsError ? .red : .secondary).lineLimit(4) }
                 if !k.orphans.isEmpty {
                     Button("Clean Up \(k.orphans.count) Leftover Reading Data (\(ByteCountFormatter.string(fromByteCount: k.orphans.reduce(0) { $0 + $1.size }, countStyle: .file)))") {
                         confirmOrphans = true

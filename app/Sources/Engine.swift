@@ -146,7 +146,7 @@ final class Job: ObservableObject {
         didSet { UserDefaults.standard.set(imageMode, forKey: "imageMode") } }
     @Published var autolevel: Bool = UserDefaults.standard.object(forKey: "autolevel") as? Bool ?? true {
         didSet { UserDefaults.standard.set(autolevel, forKey: "autolevel") } }
-    @Published var spreads: String = UserDefaults.standard.string(forKey: "spreads") ?? "both" {
+    @Published var spreads: String = UserDefaults.standard.string(forKey: "spreads") ?? "split" {
         didSet { UserDefaults.standard.set(spreads, forKey: "spreads") } }
     @Published var crop: String = UserDefaults.standard.string(forKey: "crop") ?? "strong" {
         didSet { UserDefaults.standard.set(crop, forKey: "crop") } }

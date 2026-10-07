@@ -343,11 +343,33 @@ KOREADER_SETTINGS = {
     "kopt_page_gap_height": "0",
     "kopt_zoom_mode_genus": "4",                # fit the whole page
     "kopt_zoom_mode_type": "2",
+    "kopt_trim_page": "3",                      # Page Crop "none": auto-crop sized every page differently (pages jumped
+                                                # around); the app already crops the white margins
     "disable_double_tap": "true",               # no 10-page jumps, faster page turns
     "home_dir": '"/mnt/us/documents/Manga"',
 }
 KOREADER_GESTURES_OFF = ("tap_top_left_corner", "tap_top_right_corner", "tap_left_bottom_corner", "tap_right_bottom_corner",
                          "one_finger_swipe_bottom_edge_left", "one_finger_swipe_bottom_edge_right")
+
+
+BOOK_VIEW = {"kopt_page_scroll": "0", "kopt_page_gap_height": "0", "kopt_zoom_mode_genus": "4",
+             "kopt_zoom_mode_type": "2", "zoom_mode": '"page"', "normal_zoom_mode": '"page"', "kopt_trim_page": "3"}
+
+
+def fix_book_view(meta, extra=None):
+    """Set one book's KOReader view settings (metadata.pdf.lua) to the manga view; True if the file changed."""
+    s = meta.read_text()
+    s2 = s
+    for key, val in {**BOOK_VIEW, **(extra or {})}.items():
+        pat = re.compile(r'(\n\s*)\["' + re.escape(key) + r'"\] = ([^,\n{]+),')
+        if pat.search(s2):
+            s2 = pat.sub(lambda m: f'{m.group(1)}["{key}"] = {val},', s2, count=1)
+        elif s2.rstrip().endswith("}"):
+            s2 = s2.rstrip()[:-1].rstrip() + f'\n    ["{key}"] = {val},\n}}\n'
+    if s2 != s:
+        meta.write_text(s2)
+        return True
+    return False
 
 
 def koreader_setup():
@@ -377,7 +399,8 @@ def koreader_setup():
 
     set_keys(ko / "settings.reader.lua", KOREADER_SETTINGS)
     # no status-bar tap strip at the bottom edge (in page-flipping mode a tap there jumps to that spot in the book)
-    set_keys(ko / "defaults.custom.lua", {"DTAP_ZONE_MINIBAR": '{ ["h"] = 0, ["w"] = 0, ["x"] = 0, ["y"] = 1, }'})
+    set_keys(ko / "defaults.custom.lua", {"DTAP_ZONE_MINIBAR": '{ ["h"] = 0, ["w"] = 0, ["x"] = 0, ["y"] = 1, }',
+                                          "DKOPTREADER_CONFIG_TRIM_PAGE": "3"})
     # corner taps / bottom-edge swipes: page flipping, bookmarks, frontlight… easy to hit by accident while reading
     g = ko / "settings" / "gestures.lua"
     if g.exists():
@@ -390,17 +413,12 @@ def koreader_setup():
             g.write_text(head + reader)
             changed.append(g.name)
     # every book KOReader has opened keeps its own view settings (a stray tap on the bottom menu can switch one to
-    # "fit width"/continuous): put the PDFs back to page view + fit full page, keeping the reading position
+    # "fit width"/continuous/auto-crop): put the PDFs back to page view + fit full page, keeping the reading position.
+    # zoom_mode must be set too: when present KOReader rebuilds the genus/type keys from it on open.
     fixed = 0
     for meta in (Path(k["mount"]) / "documents").rglob("metadata.pdf.lua"):
         try:
-            s = meta.read_text()
-            s2 = s
-            for key, val in (("kopt_page_scroll", "0"), ("kopt_page_gap_height", "0"),
-                             ("kopt_zoom_mode_genus", "4"), ("kopt_zoom_mode_type", "2")):
-                s2 = re.sub(r'(\["' + key + r'"\] = )[^,\n]+,', r"\g<1>" + val + ",", s2)
-            if s2 != s:
-                meta.write_text(s2)
+            if fix_book_view(meta):
                 fixed += 1
         except OSError:
             pass

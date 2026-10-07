@@ -135,6 +135,10 @@ struct DownloadsPane: View {
                     if !s.converted.isEmpty {
                         Button("Send Existing Kindle Book") { kindle.send(s.converted) }
                     }
+                    if s.converted.contains(where: { $0.lowercased().hasSuffix(".pdf") }) {
+                        Button("Remove Duplicate Spread Pages") { kindle.removeDuplicateSpreads(s.converted) }
+                            .disabled(kindle.fixing)
+                    }
                     Divider()
                     Button("Show in Finder") { Tools.reveal(s.path) }
                 }

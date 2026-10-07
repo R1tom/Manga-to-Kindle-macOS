@@ -9,6 +9,7 @@ boundaries (FAT32 on the Kindle can't hold files over 4 GB; smaller files also o
   pdfbook.py <book.cbz> <out_dir> <title>
 """
 import io
+import json
 import re
 import sys
 import zipfile
@@ -28,6 +29,25 @@ def chapter_of(name):
         return ""
     # KCC nests chapter folders; the last folder above the page is the chapter
     return parts[-2]
+
+
+def page_kinds(names):
+    """KCC marks spread pages in the file name: -kcc-b / -kcc-c = halves, -kcc-d (or -a) = the whole spread turned
+    sideways. The sideways page is a duplicate ("dup") when its halves are in the book too ("Both" mode)."""
+    bases = {}
+    for n in names:
+        m = re.search(r"^(.*)-kcc-([a-dx])\.[^.]+$", n)
+        if m:
+            bases.setdefault(m.group(1), set()).add(m.group(2))
+    kinds = []
+    for n in names:
+        m = re.search(r"^(.*)-kcc-([a-dx])\.[^.]+$", n)
+        k = m.group(2) if m else "x"
+        if k in "ad":
+            kinds.append("dup" if {"b", "c"} & bases.get(m.group(1), set()) else "R")
+        else:
+            kinds.append({"b": "S1", "c": "S2"}.get(k, "N"))
+    return kinds
 
 
 def cbz_to_pdf(cbz, out_dir, title, author="", progress=None):
@@ -62,6 +82,7 @@ def cbz_to_pdf(cbz, out_dir, title, author="", progress=None):
             dst = unique(out_dir / f"{safe(name)}.pdf")
             doc = fitz.open()
             toc = []
+            kinds = page_kinds([n for _, pages in part for n in pages])
             for label, pages in part:
                 if label:
                     toc.append([1, pretty(label), doc.page_count + 1])
@@ -82,6 +103,8 @@ def cbz_to_pdf(cbz, out_dir, title, author="", progress=None):
             if toc:
                 doc.set_toc(toc)
             doc.set_metadata({"title": name, "author": author or "Manga to Kindle"})
+            # which pages are sideways duplicates of a split spread (spreadfix.py removes them exactly)
+            doc.embfile_add("mk-pages.json", json.dumps({"kinds": kinds}).encode())
             tmp = dst.with_suffix(".pdf.part")
             doc.save(tmp, garbage=3, deflate=True)
             doc.close()

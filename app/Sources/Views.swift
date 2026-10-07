@@ -319,11 +319,11 @@ struct SidePanel: View {
                     }
                     .help("Best: pages reduced to exactly the 16 grays the Paperwhite shows, no JPEG artifacts — usually also the smallest file")
                     Picker("Double-page spreads", selection: $job.spreads) {
-                        Text("Both – whole spread + halves").tag("both")
-                        Text("Split into halves").tag("split")
+                        Text("Halves only (no repeats)").tag("split")
                         Text("Rotate whole spread").tag("rotate")
+                        Text("Both – halves + sideways copy").tag("both")
                     }
-                    .help("Both: the full spread turned sideways (rotate the Kindle to see it), then each half as a normal page")
+                    .help("Halves only: each half of a two-page spread as a normal upright page, every page once (best for KOReader). Both adds the whole spread turned sideways after the halves, so spread pages show up twice — use Remove Duplicate Spread Pages (Kindle menu or right-click a book) to strip those from older books.")
                     Picker("Crop margins", selection: $job.crop) {
                         Text("Strong").tag("strong")
                         Text("Normal").tag("normal")
