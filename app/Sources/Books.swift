@@ -36,6 +36,7 @@ final class BookStore: ObservableObject {
     @Published var searching = false
     @Published var results: [BookHit] = []
     @Published var errors: [String] = []
+    @Published var searched = false
     @Published var getting: Set<String> = []          // hit ids being downloaded/converted
     @Published var got: [String: String] = [:]          // hit id → AZW3 path
     @Published var failed: [String: String] = [:]
@@ -71,7 +72,7 @@ final class BookStore: ObservableObject {
     func search() {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return }
-        searching = true; errors = []
+        searching = true; errors = []; searched = true
         Task {
             defer { searching = false }
             struct R: Decodable { var results: [BookHit]; var errors: [String] }
@@ -177,6 +178,7 @@ final class BookStore: ObservableObject {
 struct BooksPane: View {
     @ObservedObject var store = BookStore.shared
     @ObservedObject var kindle = KindleDevice.shared
+    @AppStorage("mainMode") private var mode = "search"
 
     var body: some View {
         VStack(spacing: 0) {
@@ -215,6 +217,17 @@ struct BooksPane: View {
                     Text("Or drop book files here (EPUB, MOBI, AZW3, PDF, DOCX, TXT…) — they're converted to AZW3 and sent to the Kindle.")
                         .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.top, 6)
                     ForEach(store.errors, id: \.self) { Text($0).font(.caption).foregroundStyle(.orange) }
+                    if !store.query.trimmingCharacters(in: .whitespaces).isEmpty && store.searched {
+                        Button {
+                            let q = store.query.trimmingCharacters(in: .whitespaces)
+                            mode = "search"; Haru.shared.query = q; Haru.shared.search()
+                        } label: {
+                            Label("Looking for a manga? Search manga for “\(store.query.trimmingCharacters(in: .whitespaces))”",
+                                  systemImage: "magnifyingglass")
+                        }
+                        .buttonStyle(.borderedProminent).padding(.top, 10)
+                        .help("This box only searches books. Manga are searched on the manga page.")
+                    }
                 }.padding().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(store.results) { hit in BookRow(hit: hit) }

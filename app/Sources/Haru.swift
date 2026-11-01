@@ -166,6 +166,8 @@ final class Haru: ObservableObject {
 
     // search
     @Published var query = ""
+    /// set by the --download launch arg: download + convert the best source's chapters once they load
+    var autoDownload = false
     @Published var searching = false
     @Published var results: [SearchGroup] = []
     @Published var searchError: String?
@@ -299,7 +301,8 @@ final class Haru: ObservableObject {
                 startPolling()
                 // open -a "Manga to Kindle" --args --search "Dai Dark"
                 let a = CommandLine.arguments
-                if let i = a.firstIndex(of: "--search"), i + 1 < a.count { query = a[i + 1]; search() }
+                if let i = a.firstIndex(of: "--search"), i + 1 < a.count {
+                    autoDownload = a.contains("--download"); query = a[i + 1]; search() }
             case "missing":
                 state = .failed("HaruNeko isn't installed (/Applications/HakuNeko.app).")
             default:
@@ -433,6 +436,7 @@ final class Haru: ObservableObject {
                 guard source?.id == r.id else { return }
                 chapterList = list
                 chosen = defaultSelection(list)
+                if autoDownload { autoDownload = false; download(convert: true) }
             } catch { searchError = error.localizedDescription }
         }
     }

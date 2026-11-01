@@ -102,6 +102,7 @@ struct ContentView: View {
             Haru.shared.start(); _ = KindleDevice.shared
             // open -a "Manga to Kindle" --args --book-search "pride and prejudice"
             let a = CommandLine.arguments
+            if a.contains("--search") { mode = "search" }
             if let i = a.firstIndex(of: "--book-search"), i + 1 < a.count {
                 mode = "books"; BookStore.shared.query = a[i + 1]; BookStore.shared.search()
             }
