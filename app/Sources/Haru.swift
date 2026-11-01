@@ -694,6 +694,12 @@ final class Haru: ObservableObject {
         guard let root = group.first(where: { $0.id == g }) else { return }
         let files = Array(Set(group.flatMap { findFiles($0) })).sorted()
         guard !files.isEmpty else { return }
+        // never drop a chapter silently: say so when fewer files were found than chapters downloaded
+        let expected = Set(root.nums.values.map(AltSource.key)).count
+        if files.count < expected {
+            Status.shared.set(root.mangaTitle, \.download, .done,
+                "Only \(files.count) of \(expected) chapter files found — check the book (Downloaded → re-convert)")
+        }
         Job.shared.open(files, autoConvert: true, title: root.mangaTitle)
         NotificationCenter.default.post(name: .showConverter, object: nil)
     }
@@ -828,8 +834,14 @@ final class Haru: ObservableObject {
 
     private func findFilesByTitles(_ b: Batch) -> [String] {
         let fm = FileManager.default
+        // loose: letters + digits only (fine for source/series folders)
         func clean(_ s: String) -> String {
             s.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.map(String.init).joined()
+        }
+        // strict: also keeps "." so "Chapter 5.5" and "Chapter 55" stay different
+        // (loose matching made both "chapter55" → Ajin's ch 55 was silently left out of the book)
+        func strict(_ s: String) -> String {
+            s.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) || $0 == "." }.map(String.init).joined()
         }
         func child(_ dir: String, _ name: String) -> String? {
             let want = clean(name)
@@ -839,12 +851,19 @@ final class Haru: ObservableObject {
                 .map { dir + "/" + $0 }
         }
         guard let srcDir = child(mediaDir, b.sourceTitle), let mangaDir = child(srcDir, b.mangaTitle) else { return [] }
-        let wanted = Set(b.chapterTitles.map(clean))
-        let items = (try? fm.contentsOfDirectory(atPath: mangaDir)) ?? []
-        return items.filter { name in
-            let stem = (name as NSString).deletingPathExtension
-            return wanted.contains(clean(stem)) || wanted.contains(clean(name))
-        }.map { mangaDir + "/" + $0 }.sorted()
+        let items = ((try? fm.contentsOfDirectory(atPath: mangaDir)) ?? []).filter { !$0.hasPrefix(".") }
+        func stem(_ n: String) -> String { (n as NSString).deletingPathExtension }
+        var found = Set<String>()
+        for t in b.chapterTitles {
+            let s = strict(t)
+            let exact = items.filter { strict(stem($0)) == s || strict($0) == s }
+            if !exact.isEmpty { found.formUnion(exact); continue }
+            // fallback (file name lost a dot): only when exactly one not-yet-used file matches
+            let l = clean(t)
+            let loose = items.filter { !found.contains($0) && (clean(stem($0)) == l || clean($0) == l) }
+            if loose.count == 1 { found.insert(loose[0]) }
+        }
+        return found.map { mangaDir + "/" + $0 }.sorted()
     }
 }
 
